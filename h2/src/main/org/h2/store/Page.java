@@ -53,6 +53,20 @@ public abstract class Page extends CacheObject {
      */
     public static final int TYPE_BTREE_NODE = 5;
 
+    /* ================================================ */
+
+    /**
+     * A Persistent hash root page (hash structure data)
+     */
+    public static final int TYPE_PERSISTENT_HASH_ROOT = 100;
+
+    /**
+     * A Persistent hash data page
+     */
+    public static final int TYPE_PERSISTENT_HASH_DATA = 101;
+
+    /* ================================================ */
+
     /**
      * A page containing a list of free pages (the last page: + FLAG_LAST).
      */
