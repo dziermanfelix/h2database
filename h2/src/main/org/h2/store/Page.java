@@ -58,12 +58,12 @@ public abstract class Page extends CacheObject {
     /**
      * A Persistent hash root page (hash structure data)
      */
-    public static final int TYPE_PERSISTENT_HASH_ROOT = 100;
+    public static final int TYPE_PERSISTENT_HASH_BUCKET = 100;
 
     /**
      * A Persistent hash data page
      */
-    public static final int TYPE_PERSISTENT_HASH_DATA = 101;
+    public static final int TYPE_PERSISTENT_HASH_OVERFLOW_BUCKET = 101;
 
     /* ================================================ */
 
