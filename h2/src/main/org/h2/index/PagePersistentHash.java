@@ -16,14 +16,17 @@ import org.h2.store.Page;
 /**
  * A linear hash page that contains hash index data. Format:
  * <ul>
- * <li>page type: byte</li>
- * <li>index id: varInt</li>
- * <li>overflow page (0 if none): varInt</li>
+ * <li>page type: byte</li> †
+ * <li>checksum: short</li> †
+ * <li>overflow page (0 if none): int</li> †
+ * <li>index id: varInt</li> †
  * <li>key offset: byte</li>
  * <li>key value: varlong</li>
  * <li>_list_ of offsets: short</li>
  * <li>data (key: varLong, value,...)</li>
  * </ul>
+ *
+ * † these fields (with those types and that order) are mandatory as per the PageStore implementation
  */
 public class PagePersistentHash extends Page {
 
