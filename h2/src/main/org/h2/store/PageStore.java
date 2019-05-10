@@ -21,18 +21,7 @@ import org.h2.engine.Constants;
 import org.h2.engine.Database;
 import org.h2.engine.Session;
 import org.h2.engine.SysProperties;
-import org.h2.index.Cursor;
-import org.h2.index.Index;
-import org.h2.index.IndexType;
-import org.h2.index.PageBtreeIndex;
-import org.h2.index.PageBtreeLeaf;
-import org.h2.index.PageBtreeNode;
-import org.h2.index.PageDataIndex;
-import org.h2.index.PageDataLeaf;
-import org.h2.index.PageDataNode;
-import org.h2.index.PageDataOverflow;
-import org.h2.index.PageDelegateIndex;
-import org.h2.index.PageIndex;
+import org.h2.index.*;
 import org.h2.message.DbException;
 import org.h2.message.Trace;
 import org.h2.result.Row;
@@ -739,12 +728,12 @@ public class PageStore implements CacheWriter {
 
         Data data = createData();
         readPage(pageId, data);
-        int type = data.readByte();
+        int type = data.readByte(); // type
         if (type == Page.TYPE_EMPTY) {
             return null;
         }
-        data.readShortInt();
-        data.readInt();
+        data.readShortInt(); // checksum
+        data.readInt(); // parent/overflow page
         if (!checksumTest(data.getBytes(), pageId, pageSize)) {
             throw DbException.get(ErrorCode.FILE_CORRUPTED_1,
                     "wrong checksum");
@@ -842,6 +831,28 @@ public class PageStore implements CacheWriter {
         case Page.TYPE_STREAM_DATA:
             p = PageStreamData.read(this, data, pageId);
             break;
+        case Page.TYPE_PERSISTENT_HASH_BUCKET: {
+            // get the index for the page
+            int indexId = data.readVarInt();
+            PageIndex idx = metaObjects.get(indexId);
+            if (idx == null) {
+                throw DbException.get(ErrorCode.FILE_CORRUPTED_1,
+                        "index not found " + indexId);
+            }
+            if (!(idx instanceof PagePersistentHashIndex)) {
+                throw DbException.get(ErrorCode.FILE_CORRUPTED_1,
+                        "not a persistent hash index " + indexId + " " + idx);
+            }
+            PagePersistentHashIndex index = (PagePersistentHashIndex)idx;
+
+            // keep statistics on something?
+            if (statistics != null) {
+                statisticsIncrement(index.getTable().getName() +
+                        "." + index.getName() + " read");
+            }
+            p = PagePersistentHash.read(index, data, pageId);
+            break;
+        }
         default:
             throw DbException.get(ErrorCode.FILE_CORRUPTED_1,
                     "page=" + pageId + " type=" + type);
