@@ -6,7 +6,6 @@
 package org.h2.index;
 
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.Map;
 import java.util.TreeMap;
 import org.h2.command.dml.AllColumnsForPlan;
@@ -48,7 +47,8 @@ public class HashIndex extends BaseIndex {
     }
 
     private void reset() {
-        rows = totalOrdering ? new HashMap<Value, Long>() : new TreeMap<Value, Long>(database.getCompareMode());
+//        rows = totalOrdering ? new HashMap<Value, Long>() : new TreeMap<Value, Long>(database.getCompareMode());
+        rows = totalOrdering ? new LinearHashMap<Value, Long>() : new TreeMap<Value, Long>(database.getCompareMode());
     }
 
     @Override
