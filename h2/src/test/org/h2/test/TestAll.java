@@ -290,7 +290,7 @@ java org.h2.test.TestAll timer
     /**
      * Whether the MVStore storage is used.
      */
-    public boolean mvStore = true;
+    public boolean mvStore = false;
 
     /**
      * If the test should run with many rows.

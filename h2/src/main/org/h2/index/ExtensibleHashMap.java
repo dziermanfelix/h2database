@@ -9,10 +9,13 @@ public class ExtensibleHashMap<K, V> implements Map {
     private V value;
 
     public ExtensibleHashMap() {
-        System.out.println("default construct");
+        System.out.println("ExtensibleHashMap Default");
+        System.exit(1);
     }
 
     public ExtensibleHashMap(K key, V value) {
+        System.out.println("ExtensibleHashMap K-V");
+        System.exit(1);
         this.key = key;
         this.value = value;
     }
