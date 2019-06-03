@@ -1,26 +1,31 @@
 package org.h2.index;
 
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Map;
 import java.util.Set;
 
-public class LinearHashMap<K, V> implements Map {
+public class LinearHashMap<K, V> implements Map<K, V> {
     private K key;
     private V value;
+    ArrayList<LinearHashBucket<K, V>> buckets;
 
-    private Integer putCount = 0;
-    private Integer getCount = 0;
+    /*
+        n = num buckets
+        r = num records
+        i = num bits used to represent
+     */
+    private Integer i = 0;
+    private Integer r = 0;
+    private Integer n = 0;
 
     public LinearHashMap() {
-//        System.out.println("LinearHashMap Default");
-//        System.exit(1);
-    }
-
-    public LinearHashMap(K key, V value) {
-        System.out.println("LinearHashMap K-V");
-        System.exit(1);
-        this.key = key;
-        this.value = value;
+        super();
+        LinearHashBucket bucket = new LinearHashBucket();
+        buckets = new ArrayList<>(1);
+        buckets.add(bucket);
+        n = 1;
+        i = 2;
     }
 
     @Override
@@ -48,22 +53,44 @@ public class LinearHashMap<K, V> implements Map {
     }
 
     @Override
-    public Object get(Object key) {
-        getCount++;
-        System.out.println("LHM get()" + " " + getCount);
+    public V get(Object key) {
+        for(LinearHashBucket<K, V> bucket : buckets) {
+            if(bucket.getRow((K) key) != null) {
+                return bucket.getRow((K) key);
+            }
+        }
         return null;
     }
 
     @Override
     public Object put(Object key, Object value) {
-        putCount++;
-        System.out.println("LHM put()" + " " + putCount);
+//        System.out.println("i=" + i + ",n=" + n + ",r=" + r);
+        // adding a record, increment r
+        r++;
+        // find an available bucket
+        boolean full = false;
+        for(LinearHashBucket b : buckets) {
+            if(!b.isFull()) {
+                b.addRow(key, value);
+                full = false;
+            }
+            else {
+                full = true;
+            }
+        }
+        // no available buckets, add a new one
+        if(full) {
+            buckets.add(new LinearHashBucket(key, value));
+            n++;
+        }
+
         return null;
     }
 
     @Override
-    public Object remove(Object key) {
+    public V remove(Object key) {
         System.out.println("LHM remove()");
+        r--;
         return null;
     }
 
@@ -90,18 +117,7 @@ public class LinearHashMap<K, V> implements Map {
     }
 
     @Override
-    public Set<Entry> entrySet() {
-        System.out.println("LHM entrySet()");
+    public Set<Entry<K, V>> entrySet() {
         return null;
-    }
-
-    public K getKey() {
-        System.out.println("LHM getKey()");
-        return key;
-    }
-
-    public V getValue() {
-        System.out.println("LHM getValue()");
-        return value;
     }
 }

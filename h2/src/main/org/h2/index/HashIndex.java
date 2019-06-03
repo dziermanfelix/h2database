@@ -48,7 +48,8 @@ public class HashIndex extends BaseIndex {
 
     private void reset() {
 //        rows = totalOrdering ? new HashMap<Value, Long>() : new TreeMap<Value, Long>(database.getCompareMode());
-        rows = totalOrdering ? new LinearHashMap<Value, Long>() : new TreeMap<Value, Long>(database.getCompareMode());
+//        rows = totalOrdering ? new LinearHashMap<Value, Long>() : new TreeMap<Value, Long>(database.getCompareMode());
+        rows = new LinearHashMap<Value, Long>();
     }
 
     @Override
