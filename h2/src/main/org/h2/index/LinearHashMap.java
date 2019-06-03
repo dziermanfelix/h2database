@@ -8,24 +8,36 @@ import java.util.Set;
 public class LinearHashMap<K, V> implements Map<K, V> {
     private K key;
     private V value;
-    ArrayList<LinearHashBucket<K, V>> buckets;
+    private ArrayList<LinearHashBucket<K, V>> buckets;
+    private Float capacity = 0.85f;
 
     /*
         n = num buckets
         r = num records
         i = num bits used to represent
      */
-    private Integer i = 0;
-    private Integer r = 0;
-    private Integer n = 0;
+    private Integer i;
+    private Integer r;
+    private Integer n;
 
     public LinearHashMap() {
         super();
-        LinearHashBucket bucket = new LinearHashBucket();
-        buckets = new ArrayList<>(1);
-        buckets.add(bucket);
-        n = 1;
+        r = 0;
         i = 2;
+        n = 2;
+        initializeBuckets();
+    }
+
+    /**
+     * Initialize Buckets
+     * Initializes the linear hash buckets.
+     */
+    private void initializeBuckets() {
+        buckets = new ArrayList<>(n);
+        for(int i = 0; i < n; i++) {
+            LinearHashBucket bucket = new LinearHashBucket();
+            buckets.add(bucket);
+        }
     }
 
     @Override
@@ -52,38 +64,100 @@ public class LinearHashMap<K, V> implements Map<K, V> {
         return false;
     }
 
-    @Override
-    public V get(Object key) {
-        for(LinearHashBucket<K, V> bucket : buckets) {
-            if(bucket.getRow((K) key) != null) {
-                return bucket.getRow((K) key);
-            }
+//    /**
+//     * Get Hash Bucket
+//     * Gets the hash bucket based on the hash
+//     * @param hash
+//     * @return
+//     */
+//    private LinearHashBucket<K, V> getHashBucket(int hash) {
+//        int bitmask = ~((~0) << this.i);
+//
+//        int hashedBlock = hash & bitmask;
+//
+//        // remove the leading bit if the block doesnt exist
+//        if (hashedBlock > this.n) {
+//            hashedBlock = hash & (bitmask >>> 1);
+//        }
+//
+//        return buckets.get(hashedBlock);
+//    }
+
+    private int getHashedBlock(int hash) {
+        int bitmask = ~((~0) << this.i);
+
+        int hashedBlock = hash & bitmask;
+
+        // remove the leading bit if the block doesnt exist
+        if (hashedBlock > this.n) {
+            hashedBlock = hash & (bitmask >>> 1);
         }
-        return null;
+
+        return hashedBlock;
     }
 
     @Override
     public Object put(Object key, Object value) {
-//        System.out.println("i=" + i + ",n=" + n + ",r=" + r);
+        System.out.println("i=" + i + ",n=" + n + ",r=" + r);
+
         // adding a record, increment r
         r++;
-        // find an available bucket
-        boolean full = false;
-        for(LinearHashBucket b : buckets) {
-            if(!b.isFull()) {
-                b.addRow(key, value);
-                full = false;
-            }
-            else {
-                full = true;
-            }
-        }
-        // no available buckets, add a new one
-        if(full) {
-            buckets.add(new LinearHashBucket(key, value));
+        float capCheck = (float) r / (n * 10);      // every bucket holds 10 rows
+
+        if(capCheck >= capacity) {
             n++;
+            buckets.add(new LinearHashBucket());
+
+            int test = (int) (Math.pow(2, i) + 1);
+            if(n == test) {
+                i++;
+            }
         }
 
+        LinearHashBucket bucket = null;
+        int m = getHashedBlock(key.hashCode());
+        System.out.println("m=" + m);
+        System.out.println("n=" + n);
+        if(m < n) {
+            bucket = buckets.get(m);
+        }
+        else if(m < ((int) (Math.pow(2, i)))) {
+            // added the -1 at the end for out of bounds error ???
+            int index = (int) Math.pow(2, (i - 1)) - 1;
+            bucket = buckets.get(index);
+        }
+        bucket.addRow(key, value);
+
+//        LinearHashBucket bucket = getHashBucket(key.hashCode());
+//        bucket.addRow(key, value);
+
+        // find an available bucket
+//        boolean full = false;
+//        for(LinearHashBucket b : buckets) {
+//            if(!b.isFull()) {
+//                b.addRow(key, value);
+//                full = false;
+//            }
+//            else {
+//                full = true;
+//            }
+//        }
+        // no available buckets, add a new one
+//        if(full) {
+//            buckets.add(new LinearHashBucket(key, value));
+//            n++;
+//        }
+
+        return null;
+    }
+
+    @Override
+    public V get(Object key) {
+        for(LinearHashBucket<K, V> bucket : buckets) {
+            if(bucket.getValue((K) key) != null) {
+                return bucket.getValue((K) key);
+            }
+        }
         return null;
     }
 

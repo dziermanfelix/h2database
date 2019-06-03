@@ -2563,7 +2563,7 @@ public class JdbcResultSet extends TraceObject implements ResultSet, JdbcResultS
     @Override
     public int getRow() throws SQLException {
         try {
-            debugCodeCall("getRow");
+            debugCodeCall("getValue");
             checkClosed();
             if (result.isAfterLast()) {
                 return 0;

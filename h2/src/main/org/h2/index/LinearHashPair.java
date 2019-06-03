@@ -1,5 +1,10 @@
 package org.h2.index;
 
+/**
+ * This class represents a linear hash row in a linear hash bucket
+ * @param <K> key
+ * @param <V> value
+ */
 public class LinearHashPair<K, V> {
     public final K first;
     public final V second;
