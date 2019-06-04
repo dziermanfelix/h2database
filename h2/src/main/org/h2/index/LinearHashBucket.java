@@ -6,15 +6,17 @@ import java.util.ArrayList;
  * This class represents a hash bucket
  */
 public class LinearHashBucket<K, V> {
-    ArrayList<LinearHashPair<K, V>> rows;
-    LinearHashBucket overflowBucket;
+    private ArrayList<LinearHashPair<K, V>> rows;
+    private LinearHashBucket<K, V> overflowBucket;
+    private boolean overflow = false;
+    private int bucketCapacity = 10;
 
     public LinearHashBucket() {
-        rows = new ArrayList<>(10);
+        rows = new ArrayList<>(bucketCapacity);
     }
 
     public LinearHashBucket(K key, V value) {
-        rows = new ArrayList<>(10);
+        rows = new ArrayList<>(bucketCapacity);
         rows.add(new LinearHashPair(key, value));
     }
 
@@ -29,13 +31,27 @@ public class LinearHashBucket<K, V> {
             rows.add(new LinearHashPair(key, value));
         }
         else {
-            overflowBucket = new LinearHashBucket(key, value);
+            if(overflow) {
+                overflowBucket.addRow(key, value);
+            }
+            else {
+                overflowBucket = new LinearHashBucket(key, value);
+                overflow = true;
+            }
         }
     }
 
-//    public void removeRow(K key, V value) {
-//        rows.remove(new LinearHashPair(key, value));
-//    }
+    public void removeRow(K key) {
+        int index = -1;
+        for(int i = 0; i < rows.size(); i++) {
+            if(rows.get(i).getFirst() == key) {
+                index = i;
+            }
+        }
+        if(index != -1) {
+            rows.remove(index);
+        }
+    }
 
     /**
      * Get Value
@@ -50,16 +66,10 @@ public class LinearHashBucket<K, V> {
                 return row.getSecond();
             }
         }
-
-        // check overflow bucket before returning null
-        if(this.isFull()) {
-            for(LinearHashPair<K, V> row : rows) {
-                if(key.equals(row.getFirst())) {
-                    return row.getSecond();
-                }
-            }
+        // check overflow bucket
+        if(overflow) {
+            return overflowBucket.getValue(key);
         }
-
         // key is not found
         return null;
     }
@@ -67,11 +77,38 @@ public class LinearHashBucket<K, V> {
     /**
      * Is Full
      * Checks to see if this bucket is full
-     * @return True if size is 10
+     * @return True if size == bucketCapacity
      */
     public boolean isFull() {
-        if(rows.size() >= 10)
+        if(rows.size() >= bucketCapacity)
             return true;
         return false;
+    }
+
+    public ArrayList<LinearHashPair<K, V>> getRows() {
+        ArrayList<LinearHashPair<K, V>> listOfRows = new ArrayList<>(rows);
+        if(overflow) {
+            ArrayList<LinearHashPair<K, V>> overflowRows = new ArrayList<>(overflowBucket.getRows());
+            for(LinearHashPair<K, V> pair : overflowRows) {
+                listOfRows.add(pair);
+            }
+        }
+        return listOfRows;
+    }
+
+    public boolean isOverflow() {
+        return overflow;
+    }
+
+    public String toString() {
+        StringBuilder sb = new StringBuilder();
+        sb.append("|");
+        if(rows != null) {
+            for (LinearHashPair<K, V> row : rows) {
+                sb.append(row.getFirst().toString() + ",");
+            }
+        }
+        sb.append("|");
+        return sb.toString();
     }
 }

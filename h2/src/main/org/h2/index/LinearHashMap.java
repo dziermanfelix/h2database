@@ -1,24 +1,23 @@
 package org.h2.index;
 
+import java.sql.SQLOutput;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Map;
 import java.util.Set;
 
 public class LinearHashMap<K, V> implements Map<K, V> {
-    private K key;
-    private V value;
     private ArrayList<LinearHashBucket<K, V>> buckets;
-    private Float capacity = 0.85f;
+    private Float maxCapacityPercentage = 0.85f;
 
     /*
         n = num buckets
         r = num records
         i = num bits used to represent
      */
-    private Integer i;
-    private Integer r;
-    private Integer n;
+    private int i;
+    private int r;
+    private int n;
 
     public LinearHashMap() {
         super();
@@ -64,107 +63,107 @@ public class LinearHashMap<K, V> implements Map<K, V> {
         return false;
     }
 
-//    /**
-//     * Get Hash Bucket
-//     * Gets the hash bucket based on the hash
-//     * @param hash
-//     * @return
-//     */
-//    private LinearHashBucket<K, V> getHashBucket(int hash) {
-//        int bitmask = ~((~0) << this.i);
-//
-//        int hashedBlock = hash & bitmask;
-//
-//        // remove the leading bit if the block doesnt exist
-//        if (hashedBlock > this.n) {
-//            hashedBlock = hash & (bitmask >>> 1);
-//        }
-//
-//        return buckets.get(hashedBlock);
-//    }
-
-    private int getHashedBlock(int hash) {
+    private int getHash(int hashCode) {
         int bitmask = ~((~0) << this.i);
-
-        int hashedBlock = hash & bitmask;
-
+        int hash = hashCode & bitmask;
         // remove the leading bit if the block doesnt exist
-        if (hashedBlock > this.n) {
-            hashedBlock = hash & (bitmask >>> 1);
+        if (hash > this.n) {
+            hash = hash & (bitmask >>> 1);
         }
-
-        return hashedBlock;
+        return hash;
     }
 
-    @Override
-    public Object put(Object key, Object value) {
-        System.out.println("i=" + i + ",n=" + n + ",r=" + r);
-
-        // adding a record, increment r
-        r++;
-        float capCheck = (float) r / (n * 10);      // every bucket holds 10 rows
-
-        if(capCheck >= capacity) {
-            n++;
-            buckets.add(new LinearHashBucket());
-
-            int test = (int) (Math.pow(2, i) + 1);
-            if(n == test) {
-                i++;
-            }
-        }
-
-        LinearHashBucket bucket = null;
-        int m = getHashedBlock(key.hashCode());
-        System.out.println("m=" + m);
-        System.out.println("n=" + n);
+    private LinearHashBucket<K, V> getBucketUsingLinearHashing(Object key) {
+        LinearHashBucket<K, V> bucket = null;
+        int m = getHash(key.hashCode());
         if(m < n) {
             bucket = buckets.get(m);
         }
         else if(m < ((int) (Math.pow(2, i)))) {
-            // added the -1 at the end for out of bounds error ???
-            int index = (int) Math.pow(2, (i - 1)) - 1;
+            int index = m - (int) (Math.pow(2, (i - 1)));
             bucket = buckets.get(index);
         }
-        bucket.addRow(key, value);
+        return bucket;
+    }
 
-//        LinearHashBucket bucket = getHashBucket(key.hashCode());
-//        bucket.addRow(key, value);
-
-        // find an available bucket
-//        boolean full = false;
-//        for(LinearHashBucket b : buckets) {
-//            if(!b.isFull()) {
-//                b.addRow(key, value);
-//                full = false;
+//    private void debugPrint() {
+//        System.out.println("\n\n\n");
+//        System.out.println("DEBUG PRINT");
+//        int i = 0;
+//        for(LinearHashBucket<K, V> bucket : buckets) {
+//            System.out.println("bucket " + i);
+//            for(LinearHashPair<K, V> row : bucket.getRows()) {
+//                System.out.print(row.getFirst() + ", ");
 //            }
-//            else {
-//                full = true;
-//            }
+//            i++;
+//            System.out.println();
 //        }
-        // no available buckets, add a new one
-//        if(full) {
-//            buckets.add(new LinearHashBucket(key, value));
-//            n++;
-//        }
+//        System.out.println("DEBUG PRINT DONE\n\n");
+//    }
 
+    private void removeOldRows(LinearHashBucket<K, V> bucket, ArrayList<LinearHashPair<K, V>> list) {
+        for(LinearHashPair<K, V> row : list) {
+            bucket.removeRow(row.getFirst());
+        }
+    }
+
+    private void splitBucket(int n) {
+        int index = (n - (int) Math.pow(2, (i - 1)));
+        LinearHashBucket<K, V> currentBucket = buckets.get(index);
+        ArrayList<LinearHashPair<K, V>> rowsToRemove = new ArrayList<>();
+        for(LinearHashPair<K, V> pair : currentBucket.getRows()) {
+            K key = pair.getFirst();
+            V value = pair.getSecond();
+            LinearHashBucket<K, V> splitBucket = getBucketUsingLinearHashing(key);
+            if(!currentBucket.equals(splitBucket)) {
+                splitBucket.addRow(key, value);
+                rowsToRemove.add(pair);
+            }
+        }
+        removeOldRows(currentBucket, rowsToRemove);
+    }
+
+    private void checkCapacityAndVariables() {
+        float capCheck = (float) r / (n * 10);      // every bucket holds 10 rows
+        if(capCheck >= maxCapacityPercentage) {
+            n++;
+            LinearHashBucket<K, V> bucketToAdd = new LinearHashBucket<>();
+            buckets.add(bucketToAdd);
+
+            int checkIncrementi = (int) (Math.pow(2, i) + 1);
+            if(n == checkIncrementi) {
+                i++;
+            }
+
+            // for now split using old n...
+            splitBucket(n - 1);
+        }
+    }
+
+    @Override
+    public Object put(Object key, Object value) {
+        checkCapacityAndVariables();
+        LinearHashBucket<K, V> bucket = getBucketUsingLinearHashing(key);
+        bucket.addRow((K)key, (V)value);
+        r++;
         return null;
     }
 
     @Override
     public V get(Object key) {
-        for(LinearHashBucket<K, V> bucket : buckets) {
-            if(bucket.getValue((K) key) != null) {
-                return bucket.getValue((K) key);
-            }
-        }
-        return null;
+        LinearHashBucket<K, V> bucket = getBucketUsingLinearHashing(key);
+        return bucket.getValue((K)key);
     }
 
+    // not actually using hash
     @Override
     public V remove(Object key) {
-        System.out.println("LHM remove()");
-        r--;
+        LinearHashBucket<K, V> bucket = getBucketUsingLinearHashing(key);
+        V value = bucket.getValue((K) key);
+        if(value != null) {
+            bucket.removeRow((K) key);
+            r--;
+        }
         return null;
     }
 
@@ -193,5 +192,21 @@ public class LinearHashMap<K, V> implements Map<K, V> {
     @Override
     public Set<Entry<K, V>> entrySet() {
         return null;
+    }
+
+    public int getI() {
+        return i;
+    }
+
+    public int getR() {
+        return r;
+    }
+
+    public int getN() {
+        return n;
+    }
+
+    public ArrayList<LinearHashBucket<K, V>> getBuckets() {
+        return buckets;
     }
 }
