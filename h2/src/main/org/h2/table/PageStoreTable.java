@@ -26,6 +26,7 @@ import org.h2.index.PageDelegateIndex;
 import org.h2.index.ScanIndex;
 import org.h2.index.SpatialTreeIndex;
 import org.h2.index.TreeIndex;
+import org.h2.index.PagePersistentHashIndex;
 import org.h2.message.DbException;
 import org.h2.message.Trace;
 import org.h2.result.Row;
@@ -184,6 +185,8 @@ public class PageStoreTable extends RegularTable {
             } else if (indexType.isSpatial()) {
                 index = new SpatialTreeIndex(this, indexId, indexName, cols,
                         indexType, true, create, session);
+            } else if (indexType.isHash()) {
+                index = new PagePersistentHashIndex(this, indexId, indexName, cols, indexType, create, session);
             } else {
                 index = new PageBtreeIndex(this, indexId, indexName, cols,
                         indexType, create, session);

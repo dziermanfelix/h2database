@@ -115,6 +115,7 @@ public class PageStore implements CacheWriter {
     private static final int WRITE_VERSION = 3;
     private static final int META_TYPE_DATA_INDEX = 0;
     private static final int META_TYPE_BTREE_INDEX = 1;
+    private static final int META_TYPE_HASH_INDEX = 2;
     private static final int META_TABLE_ID = -1;
     private static final int COMPACT_BLOCK_SIZE = 1536;
     private final Database database;
@@ -831,6 +832,7 @@ public class PageStore implements CacheWriter {
         case Page.TYPE_STREAM_DATA:
             p = PageStreamData.read(this, data, pageId);
             break;
+        case Page.TYPE_PERSISTENT_HASH_OVERFLOW_BUCKET:
         case Page.TYPE_PERSISTENT_HASH_BUCKET: {
             // get the index for the page
             int indexId = data.readVarInt();
@@ -1737,7 +1739,11 @@ public class PageStore implements CacheWriter {
                     tableColumns[indexColumn.column.getColumnId()].setNullable(false);
                 }
             } else {
-                indexType = IndexType.createNonUnique(true);
+                if (type == META_TYPE_HASH_INDEX) {
+                    indexType = IndexType.createNonUnique(true, true, false);
+                } else {
+                    indexType = IndexType.createNonUnique(true);
+                }
             }
             meta = table.addIndex(session, "I" + id, id, cols, indexType, false, null);
         }
@@ -1773,8 +1779,13 @@ public class PageStore implements CacheWriter {
             }
         }
         synchronized (this) {
-            int type = index instanceof PageDataIndex ?
-                    META_TYPE_DATA_INDEX : META_TYPE_BTREE_INDEX;
+            int type;
+            if (index instanceof PageDataIndex) {
+                type = META_TYPE_DATA_INDEX;
+            } else {
+                type = (index instanceof PageBtreeIndex) ? META_TYPE_BTREE_INDEX : META_TYPE_HASH_INDEX;
+            }
+
             IndexColumn[] columns = index.getIndexColumns();
             StringBuilder builder = new StringBuilder();
             for (int i = 0, length = columns.length; i < length; i++) {

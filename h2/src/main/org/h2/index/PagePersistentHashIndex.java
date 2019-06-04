@@ -40,6 +40,11 @@ public class PagePersistentHashIndex extends PageIndex {
     private long dataMemoryUsed;
 
     /**
+     * Not sure what this means; using BTreeIndex as a model
+     */
+    private final boolean needRebuild;
+
+    /**
      * A dummy data object used to calculate how much space is consumed.
      */
     private static Data dummy;
@@ -83,22 +88,72 @@ public class PagePersistentHashIndex extends PageIndex {
      *            not yet known
      * @param newIndexType the index type
      */
-    protected PagePersistentHashIndex(PageStoreTable newTable, int id, String name, IndexColumn[] newIndexColumns, IndexType newIndexType) {
+    public PagePersistentHashIndex(PageStoreTable newTable, int id, String name, IndexColumn[] newIndexColumns, IndexType newIndexType, boolean create, Session session) {
         super(newTable, id, name, newIndexColumns, newIndexType);
 
+        // if the database is started and index is being created, check that none of the columns are BLOBS
+        if (!database.isStarting() && create) {
+            checkIndexColumnTypes(newIndexColumns);
+        }
         this.storeTable = newTable;
+
+        // check for database persistence & valid id
+        if (!database.isPersistent() || id < 0) {
+            throw DbException.throwInternalError(name);
+        }
+
         this.store = this.database.getPageStore();
+        this.store.addIndex(this);
+
+        this.pageIds = new ArrayList<>();
+
+        if (create) {
+            // new index being created - create initial root page
+            rootPageId = store.allocatePage();
+            this.pageIds.add(rootPageId);
+
+            store.addMeta(this, session);
+
+            PagePersistentHash root = PagePersistentHash.create(this, rootPageId, PagePersistentHash.TYPE_PERSISTENT_HASH_BUCKET);
+            store.logUndo(root, null);
+            store.update(root);
+
+            this.pageCount = 1;
+            this.dataMemoryAvailable = root.getTotalTupleSpace();
+            this.dataMemoryUsed = root.getOccupiedSpace();
+
+        } else {
+            // load the root page
+            rootPageId = store.getRootPageId(id);
+            PagePersistentHash page = getPage(rootPageId);
+
+            // count the rows in the page
+            this.rowCount += page.rowCount();
+            this.pageCount = 1;
+            this.dataMemoryAvailable = page.getTotalTupleSpace();
+            this.dataMemoryUsed = page.getOccupiedSpace();
+            this.pageIds.add(rootPageId);
+
+
+            // get all the following pages
+            int nextPageId;
+            while ((nextPageId = page.nextPage()) > 0) {
+                page = getPage(nextPageId);
+                this.rowCount += page.rowCount();
+                this.pageCount++;
+                this.dataMemoryAvailable += page.getTotalTupleSpace();
+                this.dataMemoryUsed += page.getOccupiedSpace();
+                this.pageIds.add(nextPageId);
+            }
+        }
+        this.significantBits = (byte)Math.ceil((Math.log(this.pageCount)) / (Math.log(2)));
+
+        this.needRebuild = create || (this.rowCount == 0 && store.isRecoveryRunning());
+        if (this.trace.isDebugEnabled()) {
+            this.trace.debug("opened {0} rows: {1}", getName(), this.rowCount);
+        }
 
         PagePersistentHashIndex.dummy = this.store.createData();
-
-        // stuff
-        // TODO: create a single page (the root/initial page) -- if new index
-        // TODO: load the data (from somewhere) -- if not new index
-        // TODO: set the initial values
-        // TODO: get occupancy data;
-        /*
-        Occupancy data: get the memory used by each row inserted (add to size when adding row, remove when removing)
-         */
     }
 
     /**
@@ -167,11 +222,16 @@ public class PagePersistentHashIndex extends PageIndex {
             // allocate a new bucket page
             int newPageId = this.store.allocatePage();
             PagePersistentHash newPage = PagePersistentHash.create(this, newPageId, Page.TYPE_PERSISTENT_HASH_BUCKET);
+
+            // set the next page ID in the page chain
+            PagePersistentHash lastPage = getPage(this.pageIds.get(this.pageIds.size() - 1));
+            lastPage.setNextPageId(newPageId);
+
             this.pageIds.add(newPageId);
             this.store.logUndo(newPage, null);
 
             // register the new memory that is made available
-            this.dataMemoryAvailable += newPage.getAvailableSpace();
+            this.dataMemoryAvailable += newPage.getTotalTupleSpace();
 
             // add the new page & find how many bits are significant
             this.pageCount++;
@@ -189,14 +249,18 @@ public class PagePersistentHashIndex extends PageIndex {
             lowerPage.reset();
 
             // rehash each entry to their respective block
+            int bitmask = ~((~0) << this.significantBits);
+
             for (SearchRow r : rows) {
-                if (this.calculateHashValue(r) == lowerPageHashValue) {
+                int hashcode = this.calculateHashValue(r);
+                if ((hashcode & bitmask) == lowerPageHashValue) {
                     lowerPage.addRow(r);
                 } else {
                     newPage.addRow(r);
                 }
             }
 
+            // add the newly created page to the cache
             this.store.update(newPage);
             this.store.update(lowerPage);
         }
@@ -219,6 +283,9 @@ public class PagePersistentHashIndex extends PageIndex {
             // remove the row
             this.dataMemoryUsed -= page.remove(deletedRow);
             this.rowCount--;
+
+            // do a light compact operation to remove empty blocks
+            page.lightCompact();
         } finally {
             store.incrementChangeCount();
         }
@@ -234,7 +301,8 @@ public class PagePersistentHashIndex extends PageIndex {
         int hashValue = 0;
         for (Column c : columns) {
             int colId = c.getColumnId();
-            hashValue += (colId * row.getValue(colId).hashCode());
+            int hashcode = row.getValue(colId).hashCode();
+            hashValue += (colId + 1) * hashcode;
         }
         return hashValue;
     }
@@ -329,7 +397,15 @@ public class PagePersistentHashIndex extends PageIndex {
     private void removeAllRows() {
         for (Integer id : this.pageIds) {
             PagePersistentHash page = getPage(id);
-            page.free(true);
+            if  (id != this.rootPageId) {
+                // free all non-root pages
+                page.free(true);
+            } else {
+                // clear the root, but dont remove it
+                page.reset();
+            }
+            store.removeFromCache(id);
+            store.update(page);
         }
         this.pageIds.clear();
 
@@ -352,6 +428,8 @@ public class PagePersistentHashIndex extends PageIndex {
     @Override
     public void remove(Session session) {
         removeAllRows();
+        store.free(rootPageId);
+        store.removeMeta(this, session);
     }
 
 
@@ -395,7 +473,7 @@ public class PagePersistentHashIndex extends PageIndex {
      */
     @Override
     public boolean needRebuild() {
-        return false;
+        return this.needRebuild;
     }
 
     @Override
@@ -457,6 +535,43 @@ public class PagePersistentHashIndex extends PageIndex {
         return (PagePersistentHash)p;
     }
 
+    /**
+     * Write a row to the data page at the given offset.
+     *
+     * @param data the data
+     * @param offset the offset
+     * @param row the row to write
+     */
+    void writeRow(Data data, int offset, SearchRow row) {
+        data.setPos(offset);
+        data.writeVarLong(row.getKey());
+        for (Column col : columns) {
+            int idx = col.getColumnId();
+            data.writeValue(row.getValue(idx));
+        }
+    }
+
+    /**
+     * Read a row from the data page at the given offset.
+     *
+     * @param data the data
+     * @param offset the offset
+     * @return the row
+     */
+    SearchRow readRow(Data data, int offset) {
+        synchronized (data) {
+            data.setPos(offset);
+            long key = data.readVarLong();
+
+            SearchRow row = table.getTemplateSimpleRow(columns.length == 1);
+            row.setKey(key);
+            for (Column col : columns) {
+                int idx = col.getColumnId();
+                row.setValue(idx, data.readValue());
+            }
+            return row;
+        }
+    }
 
     /**
      * Create a search row for this row.
@@ -473,5 +588,4 @@ public class PagePersistentHashIndex extends PageIndex {
         }
         return r;
     }
-
 }
