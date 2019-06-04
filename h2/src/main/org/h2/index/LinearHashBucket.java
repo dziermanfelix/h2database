@@ -90,10 +90,6 @@ public class LinearHashBucket<K, V> {
         return listOfRows;
     }
 
-    public boolean isOverflow() {
-        return overflow;
-    }
-
     public String toString() {
         StringBuilder sb = new StringBuilder();
         sb.append("|");
