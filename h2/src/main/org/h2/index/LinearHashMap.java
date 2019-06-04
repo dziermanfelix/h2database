@@ -1,6 +1,5 @@
 package org.h2.index;
 
-import java.sql.SQLOutput;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Map;
@@ -9,15 +8,9 @@ import java.util.Set;
 public class LinearHashMap<K, V> implements Map<K, V> {
     private ArrayList<LinearHashBucket<K, V>> buckets;
     private Float maxCapacityPercentage = 0.85f;
-
-    /*
-        n = num buckets
-        r = num records
-        i = num bits used to represent
-     */
-    private int i;
-    private int r;
-    private int n;
+    private int i;     // num buckets
+    private int r;     // num records
+    private int n;     // num bits to use from hash
 
     public LinearHashMap() {
         super();
@@ -63,6 +56,13 @@ public class LinearHashMap<K, V> implements Map<K, V> {
         return false;
     }
 
+    /**
+     * Get Hash
+     * Get hash code based on key.
+     * Last i bits of hash code.
+     * @param hashCode Hash code to get last i bits of.
+     * @return Last i bits of hash code.
+     */
     private int getHash(int hashCode) {
         int bitmask = ~((~0) << this.i);
         int hash = hashCode & bitmask;
@@ -73,6 +73,12 @@ public class LinearHashMap<K, V> implements Map<K, V> {
         return hash;
     }
 
+    /**
+     * Get Bucket Using Linear Hashing
+     * Uses the linear hashing algorithm to get the bucket that the key belongs to.
+     * @param key Key to base hash off.
+     * @return Bucket the key belongs to.
+     */
     private LinearHashBucket<K, V> getBucketUsingLinearHashing(Object key) {
         LinearHashBucket<K, V> bucket = null;
         int m = getHash(key.hashCode());
@@ -86,27 +92,23 @@ public class LinearHashMap<K, V> implements Map<K, V> {
         return bucket;
     }
 
-//    private void debugPrint() {
-//        System.out.println("\n\n\n");
-//        System.out.println("DEBUG PRINT");
-//        int i = 0;
-//        for(LinearHashBucket<K, V> bucket : buckets) {
-//            System.out.println("bucket " + i);
-//            for(LinearHashPair<K, V> row : bucket.getRows()) {
-//                System.out.print(row.getFirst() + ", ");
-//            }
-//            i++;
-//            System.out.println();
-//        }
-//        System.out.println("DEBUG PRINT DONE\n\n");
-//    }
-
+    /**
+     * Remove Old Rows
+     * When splitting a bucket, we must remove the old rows that were moved to a new bucket.
+     * @param bucket Bucket to remove rows from.
+     * @param list List of rows to remove.
+     */
     private void removeOldRows(LinearHashBucket<K, V> bucket, ArrayList<LinearHashPair<K, V>> list) {
         for(LinearHashPair<K, V> row : list) {
             bucket.removeRow(row.getFirst());
         }
     }
 
+    /**
+     * Split Bucket
+     * Part of the linear hashing algorithm.
+     * @param n Old n value.
+     */
     private void splitBucket(int n) {
         int index = (n - (int) Math.pow(2, (i - 1)));
         LinearHashBucket<K, V> currentBucket = buckets.get(index);
@@ -123,6 +125,11 @@ public class LinearHashMap<K, V> implements Map<K, V> {
         removeOldRows(currentBucket, rowsToRemove);
     }
 
+    /**
+     * Check Capacity And Variables
+     * Part of the linear hashing algorithm.
+     * Manages the variables.
+     */
     private void checkCapacityAndVariables() {
         float capCheck = (float) r / (n * 10);      // every bucket holds 10 rows
         if(capCheck >= maxCapacityPercentage) {
@@ -135,7 +142,7 @@ public class LinearHashMap<K, V> implements Map<K, V> {
                 i++;
             }
 
-            // for now split using old n...
+            // using old n...
             splitBucket(n - 1);
         }
     }

@@ -27,7 +27,7 @@ public class LinearHashBucket<K, V> {
      * @param value value to be stored
      */
     public void addRow(K key, V value) {
-        if(!this.isFull()) {
+        if(!this.overflow) {
             rows.add(new LinearHashPair(key, value));
         }
         else {
@@ -41,6 +41,11 @@ public class LinearHashBucket<K, V> {
         }
     }
 
+    /**
+     * Remove Row
+     * Removes row from the bucket.
+     * @param key Key to find correct row to remove.
+     */
     public void removeRow(K key) {
         int index = -1;
         for(int i = 0; i < rows.size(); i++) {
@@ -72,17 +77,6 @@ public class LinearHashBucket<K, V> {
         }
         // key is not found
         return null;
-    }
-
-    /**
-     * Is Full
-     * Checks to see if this bucket is full
-     * @return True if size == bucketCapacity
-     */
-    public boolean isFull() {
-        if(rows.size() >= bucketCapacity)
-            return true;
-        return false;
     }
 
     public ArrayList<LinearHashPair<K, V>> getRows() {

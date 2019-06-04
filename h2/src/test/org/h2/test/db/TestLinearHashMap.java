@@ -35,7 +35,7 @@ public class TestLinearHashMap extends TestDb {
 
     private void testLargePutAndGet() {
         LinearHashMap linearHashMap = new LinearHashMap();
-        int n = 500;
+        int n = 5000;
 
         // fill it up
         for(long i = 0; i < n; i++) {
