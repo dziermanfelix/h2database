@@ -4,7 +4,6 @@ import org.h2.index.LinearHashMap;
 import org.h2.test.TestBase;
 import org.h2.test.TestDb;
 
-import static org.junit.Assert.assertNotEquals;
 import java.sql.SQLException;
 
 public class TestLinearHashMap extends TestDb {
