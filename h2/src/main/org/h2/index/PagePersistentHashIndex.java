@@ -246,6 +246,7 @@ public class PagePersistentHashIndex extends PageIndex {
             // get all the rows at the lower page
             lowerPage.getAllRows(rows);
             // reset the lower page to be "empty".
+            this.store.logUndo(lowerPage, null);
             lowerPage.reset();
 
             // rehash each entry to their respective block
@@ -319,7 +320,7 @@ public class PagePersistentHashIndex extends PageIndex {
         int hashedBlock = hash & bitmask;
 
         // remove the leading bit if the block doesnt exist
-        if (hashedBlock > this.pageCount) {
+        if (hashedBlock >= this.pageCount) {
             hashedBlock = hash & (bitmask >>> 1);
         }
 
@@ -405,6 +406,7 @@ public class PagePersistentHashIndex extends PageIndex {
                 page.reset();
             }
             store.removeFromCache(id);
+            store.logUndo(page, null);
             store.update(page);
         }
         this.pageIds.clear();
@@ -493,7 +495,7 @@ public class PagePersistentHashIndex extends PageIndex {
      */
     @Override
     public long getDiskSpaceUsed() {
-        return this.dataMemoryAvailable;
+        return this.dataMemoryUsed;
     }
 
     /**

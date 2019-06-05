@@ -603,6 +603,7 @@ public class PagePersistentHash extends Page {
      * @return the overflow page, or null if there isnt one
      */
     private PagePersistentHash getOverflowPage(boolean createIfNoneExist) {
+        Page p = null;
         // check to see if an overflow page has been created
         if (this.overflowPageId == NO_PAGE) {
             // check if it should create the missing overflow page
@@ -615,12 +616,12 @@ public class PagePersistentHash extends Page {
                 // creation not enabled; return null
                 return null;
             }
+        } else {
+            // an overflow page has been allocated, so load it from the cache/disk
+            p = this.index.getPageStore().getPage(this.overflowPageId);
         }
 
-        // an overflow page has been allocated, get it from the cache/disk
-        Page p = this.index.getPageStore().getPage(this.overflowPageId);
-
-        // p is null if page was allocated, but not committed/saved (no changes to this page are required)
+        // p is null if either: a new page was allocated, or a previously allocated page was not committed.
         if (p == null) {
             PagePersistentHash page = PagePersistentHash.create(this.index, this.overflowPageId, Page.TYPE_PERSISTENT_HASH_OVERFLOW_BUCKET);
 
@@ -630,6 +631,7 @@ public class PagePersistentHash extends Page {
         } else if (!(p instanceof PagePersistentHash)) {
             throw DbException.get(ErrorCode.FILE_CORRUPTED_1, String.valueOf(p));
         }
+
         return (PagePersistentHash)p;
     }
 
