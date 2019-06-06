@@ -45,11 +45,6 @@ public class PagePersistentHashIndex extends PageIndex {
     private final boolean needRebuild;
 
     /**
-     * A dummy data object used to calculate how much space is consumed.
-     */
-    private static Data dummy;
-
-    /**
      * The number of bits that are significant
      *
      * Calculate this by:
@@ -134,7 +129,6 @@ public class PagePersistentHashIndex extends PageIndex {
             this.dataMemoryUsed = page.getOccupiedSpace();
             this.pageIds.add(rootPageId);
 
-
             // get all the following pages
             int nextPageId;
             while ((nextPageId = page.nextPage()) > 0) {
@@ -152,8 +146,6 @@ public class PagePersistentHashIndex extends PageIndex {
         if (this.trace.isDebugEnabled()) {
             this.trace.debug("opened {0} rows: {1}", getName(), this.rowCount);
         }
-
-        PagePersistentHashIndex.dummy = this.store.createData();
     }
 
     /**
@@ -218,8 +210,8 @@ public class PagePersistentHashIndex extends PageIndex {
      * by comparing & moving the rows to their new destination pages
      */
     private void doPageReallocation() {
-        if (this.dataMemoryUsed / (float)this.dataMemoryAvailable > PagePersistentHashIndex.DATA_OCCUPANCY_LIMIT) {
-            // allocate a new bucket page
+        if ((this.dataMemoryUsed / (float)this.dataMemoryAvailable) > PagePersistentHashIndex.DATA_OCCUPANCY_LIMIT) {
+            // allocate and init new bucket page
             int newPageId = this.store.allocatePage();
             PagePersistentHash newPage = PagePersistentHash.create(this, newPageId, Page.TYPE_PERSISTENT_HASH_BUCKET);
 
@@ -227,26 +219,22 @@ public class PagePersistentHashIndex extends PageIndex {
             PagePersistentHash lastPage = getPage(this.pageIds.get(this.pageIds.size() - 1));
             lastPage.setNextPageId(newPageId);
 
-            this.pageIds.add(newPageId);
-            this.store.logUndo(newPage, null);
-
             // register the new memory that is made available
             this.dataMemoryAvailable += newPage.getTotalTupleSpace();
 
             // add the new page & find how many bits are significant
+            this.pageIds.add(newPageId);
             this.pageCount++;
             this.significantBits = (byte)Math.ceil((Math.log(this.pageCount)) / (Math.log(2)));
 
             // now get the items at the lower page and move items that belong to this page over.
             int lowerPageHashValue = (this.pageCount - 1) & ~(~0 << (this.significantBits - 1));
-
             PagePersistentHash lowerPage = getPage(this.pageIds.get(lowerPageHashValue));
 
             ArrayList<SearchRow> rows = new ArrayList<>();
             // get all the rows at the lower page
             lowerPage.getAllRows(rows);
             // reset the lower page to be "empty".
-            this.store.logUndo(lowerPage, null);
             lowerPage.reset();
 
             // rehash each entry to their respective block
@@ -504,11 +492,11 @@ public class PagePersistentHashIndex extends PageIndex {
      * @param row the row
      * @return the number of bytes
      */
-    int getRowSize(SearchRow row) {
+    int getRowSize(SearchRow row, Data data) {
         int rowSize = Data.getVarLongLen(row.getKey());
         for (Column col : columns) {
             Value v = row.getValue(col.getColumnId());
-            rowSize += PagePersistentHashIndex.dummy.getValueLen(v);
+            rowSize += data.getValueLen(v);
         }
         return rowSize;
     }

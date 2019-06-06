@@ -12,7 +12,6 @@ import org.h2.result.SearchRow;
 import org.h2.engine.Session;
 import org.h2.store.Data;
 import org.h2.store.Page;
-
 import java.util.List;
 
 /**
@@ -53,11 +52,6 @@ public class PagePersistentHash extends Page {
      * The ID of the next page in the list
      */
     private int nextPageId;
-
-    /**
-     * The page ID
-     */
-    private int pageId;
 
     /**
      * The overflow PageID
@@ -110,7 +104,6 @@ public class PagePersistentHash extends Page {
     private Integer headerSize = null;
 
     private boolean written;
-    private boolean dataWritten;
 
 
     /**
@@ -121,14 +114,12 @@ public class PagePersistentHash extends Page {
      */
     private PagePersistentHash(PagePersistentHashIndex index, int pageId, Data data) {
         this.index = index;
-        this.pageId = pageId;
         this.data = data;
         // Store the PageID (for caching)
         setPos(pageId);
 
         // yes i know; its the default value anyway.
         this.written = false;
-        this.dataWritten = false;
     }
 
     /**
@@ -145,6 +136,9 @@ public class PagePersistentHash extends Page {
         PagePersistentHash page = new PagePersistentHash(index, pageId, index.getPageStore().createData());
         // not sure what this line does exactly; im guessing this is for the 'undo' functionality
         index.getPageStore().logUndo(page, null);
+        // set this page as not written
+        page.written = false;
+        page.changeCount = index.getPageStore().getChangeCount();
 
         page.pageType = pageType;
 
@@ -156,6 +150,9 @@ public class PagePersistentHash extends Page {
 
         // mark the offset at which the data section begins (after the header info)
         page.start = page.data.length();
+
+        // update the page (not sure if this is necessary)
+        index.getPageStore().update(page);
 
         return page;
     }
@@ -203,7 +200,6 @@ public class PagePersistentHash extends Page {
 
         // mark as written (no updates)
         written = true;
-        dataWritten = true;
     }
 
     /**
@@ -250,16 +246,11 @@ public class PagePersistentHash extends Page {
         preWriteHead();
 
         for (int i = 0; i < entryCount; i++) {
-            data.writeShortInt(this.offsets[i]);
+            this.data.writeShortInt(this.offsets[i]);
         }
-
-        if (!dataWritten) {
-            for (int i = 0; i < entryCount; i++) {
-                index.writeRow(this.data, this.offsets[i], this.rows[i]);
-            }
-            dataWritten = true;
+        for (int i = 0; i < entryCount; i++) {
+            index.writeRow(this.data, this.offsets[i], this.rows[i]);
         }
-
         written = true;
     }
 
@@ -282,7 +273,7 @@ public class PagePersistentHash extends Page {
     int addRow(SearchRow row) {
         // get how large each row is in this index -- maybe make this static since it probably doesnt change?
         // Check that nothing is of variable length before doing that
-        int rowLength = index.getRowSize(row);
+        int rowLength = index.getRowSize(row, this.data);
 
         // check that enough room for record + the offset entry
         if (rowLength + OFFSET_LENGTH > this.getAvailableSpace()) {
@@ -291,8 +282,8 @@ public class PagePersistentHash extends Page {
 
         } else {
             // this page has changed b/c new row added to the page
+            index.getPageStore().logUndo(this, data);
             written = false;
-            dataWritten = false;
             changeCount = index.getPageStore().getChangeCount();
 
             this.start += OFFSET_LENGTH;
@@ -309,7 +300,7 @@ public class PagePersistentHash extends Page {
             this.entryCount++;
             // update this page (not sure if this commits it to disk??, or triggers the write??)
             // this also might just be for the cache so that the page is kept in the cache???
-            index.getPageStore().logUndo(this, null);
+
             index.getPageStore().update(this);
 
             // return space that was used by this entry
@@ -348,10 +339,17 @@ public class PagePersistentHash extends Page {
      * @return the length of the row that was removed
      */
     private int removeRow(int i) {
+        // this page will change ... log undos
+        this.index.getPageStore().logUndo(this, data);
+        this.written = false;
+        this.changeCount = this.index.getPageStore().getChangeCount();
+
         // get the location of the start of the next row
         int startNext = i > 0 ? this.offsets[i - 1] : index.getPageStore().getPageSize();
         // get size of row
         int rowLength = startNext - this.offsets[i];
+
+        this.written = false;
 
         // decrement values as necessary
         this.start -= OFFSET_LENGTH;
@@ -363,6 +361,9 @@ public class PagePersistentHash extends Page {
         Page.add(this.offsets, i, entryCount, rowLength);
         // remove the rows
         this.rows = Page.remove(this.rows, entryCount + 1, i);
+
+        // update this page
+        this.index.getPageStore().update(this);
 
         return rowLength;
     }
@@ -377,13 +378,8 @@ public class PagePersistentHash extends Page {
     int remove(SearchRow deletionTarget) {
         // find the row that is being deleted
         for (int i = 0; i < this.entryCount; i++) {
-            if (deletionTarget.getKey() == this.rows[i].getKey()) {
-                index.getPageStore().logUndo(this, data);
-                // this page has changed b/c it will remove the row
-                written = false;
-                dataWritten = false;
-                changeCount = index.getPageStore().getChangeCount();
-
+            if (deletionTarget.getKey() == this.rows[i].getKey() &&
+                    index.compareRows(this.rows[i], deletionTarget) == 0) {
                 return removeRow(i) + OFFSET_LENGTH;
             }
         }
@@ -393,7 +389,6 @@ public class PagePersistentHash extends Page {
         if (overflowPage != null) {
             return overflowPage.remove(deletionTarget);
         } else {
-            // reached end of overflow pages, still not found
             throw DbException.get(ErrorCode.ROW_NOT_FOUND_WHEN_DELETING_1,
                     index.getSQL(new StringBuilder(), false).append(": ").append(deletionTarget).toString());
         }
@@ -402,16 +397,17 @@ public class PagePersistentHash extends Page {
     /**
      * Does a quick compact pass, merging two blocks if they fit in one another.
      */
-    public void lightCompact() {
+    void lightCompact() {
         PagePersistentHash parentPage = this;
         PagePersistentHash childPage = this.getOverflowPage(false);
 
         while (childPage != null) {
             // if the parent is able to fit all the tuples stored in the child
             if (parentPage.getAvailableSpace() > childPage.getOccupiedSpace()) {
-
+                // the pages will change...
+                this.index.getPageStore().logUndo(parentPage, parentPage.data);
+                this.index.getPageStore().logUndo(childPage, childPage.data);
                 parentPage.written = false;
-                parentPage.dataWritten = false;
                 parentPage.changeCount = index.getPageStore().getChangeCount();
 
                 // loop through all the rows in the child and add them to the parent
@@ -421,19 +417,21 @@ public class PagePersistentHash extends Page {
                 }
 
                 // free the child
-
                 // get the grandchild page if it exists
                 PagePersistentHash grandchildPage = childPage.getOverflowPage(false);
 
                 // if the overflow page has an overflow, make that this page's new overflow page
                 if (grandchildPage != null) {
-                    parentPage.overflowPageId = grandchildPage.pageId;
+                    parentPage.overflowPageId = grandchildPage.getPos();
                 } else {
                     parentPage.overflowPageId = NO_PAGE;
                 }
 
                 childPage.free(false);
                 childPage = grandchildPage;
+
+                // update the parent page
+                this.index.getPageStore().update(parentPage);
             } else {
                 // iterate down the list
                 parentPage = childPage;
@@ -512,15 +510,14 @@ public class PagePersistentHash extends Page {
 
     /**
      * Reset this page by removing all entries
-     *
-     * The reset is "lazy"; it does not clear out all the data in the arrays. This also means that the array is non-empty
-     * and will likely not need to reallocate when items are re-inserted (ideal when rehash).
-     *
-     * This also means that there may be unused references that will linger, causing some data to not be cleared by the GC
-     * right away.
      */
     void reset() {
-        // free the overflow page
+        // this page will change...
+        this.index.getPageStore().logUndo(this, data);
+        this.written = false;
+        changeCount = index.getPageStore().getChangeCount();
+
+        // free the overflow pages
         PagePersistentHash overflowPage = this.getOverflowPage(false);
         if (overflowPage != null) {
             overflowPage.free(true);
@@ -530,11 +527,11 @@ public class PagePersistentHash extends Page {
 
         this.start -= (this.entryCount * OFFSET_LENGTH);
         this.entryCount = 0;
+        this.rows = SearchRow.EMPTY_ARRAY;
+        this.offsets = null;
         this.data.reset();
 
-        this.written = false;
-        this.dataWritten = false;
-        changeCount = index.getPageStore().getChangeCount();
+        this.index.getPageStore().update(this);
     }
 
     @Override
@@ -577,7 +574,9 @@ public class PagePersistentHash extends Page {
     void setNextPageId(int pageId) {
         this.written = false;
         changeCount = index.getPageStore().getChangeCount();
+        index.getPageStore().logUndo(this, data);
         this.nextPageId = pageId;
+        index.getPageStore().update(this);
     }
 
     /**
@@ -592,7 +591,7 @@ public class PagePersistentHash extends Page {
         }
 
         index.getPageStore().logUndo(this, data);
-        index.getPageStore().free(this.pageId);
+        index.getPageStore().free(getPos());
     }
 
     /**
@@ -609,9 +608,15 @@ public class PagePersistentHash extends Page {
             // check if it should create the missing overflow page
             if (createIfNoneExist) {
                 // allocate a new page
+                // log an undo
+                index.getPageStore().logUndo(this, data);
+                // this page will change...
                 this.written = false;
-                this.overflowPageId = this.index.getPageStore().allocatePage();
                 changeCount = this.index.getPageStore().getChangeCount();
+
+                this.overflowPageId = this.index.getPageStore().allocatePage();
+
+                index.getPageStore().update(this);
             } else {
                 // creation not enabled; return null
                 return null;
