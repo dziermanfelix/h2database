@@ -2,13 +2,16 @@ package org.h2.index;
 
 import javafx.util.Pair;
 
+import java.util.AbstractMap.SimpleEntry;
 import java.util.ArrayList;
+import java.util.Map;
+import java.util.Set;
 import java.util.Iterator;
 
-public class ExtensibleHashBucket<K, V> {
+public class ExtensibleHashBucket<K,V> {
 
     //private K key;
-    private static int MAX_SIZE = 10;
+    private static int MAX_SIZE = 2;
     private int size;
     private int prefix; // amount of bits, starting from the left, to read
     //private E[] values;
@@ -73,19 +76,18 @@ public class ExtensibleHashBucket<K, V> {
         return null;
     }
 
-    public Pair<K, V> removeValue(K key) {
-        int index = -1;
-        Pair<K, V> ret_pair = null;
+    public V removeValue(K key) {
+        //int index = -1;
+        V out_value = null;
         for(int i = 0; i < this.size; i++) {
             if(this.values.get(i).getKey().equals(key)) {
                 //return this.values[i].getValue();
-                index = i;
-                ret_pair = this.values.get(index);
-                this.values.remove(index);
+                out_value = this.values.get(i).getValue();
+                this.values.remove(i);
             }
         }
         this.size--;
-        return ret_pair;
+        return out_value;
     }
 
     public ArrayList<Pair<K,V>> splitBucket(boolean isZero) { // nth significant bit
@@ -101,8 +103,19 @@ public class ExtensibleHashBucket<K, V> {
             if(getNthBit(n, value.getKey().hashCode()) == zero_one) {
                 new_list.add(value);
                 iter.remove();
+                this.size--;
             }
         }
+        //System.out.println("old list");
+//        for(Pair<K,V> pair1 : this.values) {
+//            System.out.println("key old: " + pair1.getKey());
+//            System.out.println("val old: " + pair1.getValue());
+//        }
+//        System.out.println("new list");
+//        for(Pair<K,V> pair2 : new_list) {
+//            System.out.println("key new: " + pair2.getKey());
+//            System.out.println("val new: " + pair2.getValue());
+//        }
 
         //this.incrementPrefix();
         return new_list;
@@ -118,12 +131,43 @@ public class ExtensibleHashBucket<K, V> {
 
     public void printAll() {
         for(Pair<K,V> pair : this.values) {
-            System.out.println("key: " + pair.getKey() + "value: " + pair.getValue());
+            System.out.println("key: " + pair.getKey() + " value: " + pair.getValue());
         }
     }
 
+    public boolean hasKey(K key) {
+        for(Pair<K,V> pair : this.values) {
+            if(pair.getKey().equals(key)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    public boolean hasValue(V value) {
+        for(Pair<K,V> pair : this.values) {
+            if(pair.getValue().equals(value)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    public void placeKeyInSet(Set<K> set) {
+        for(Pair<K,V> pair : this.values) {
+            set.add(pair.getKey());
+        }
+    }
+
+    public void placePairsInSet(Set<Map.Entry<K,V>> set) {
+        for(Pair<K,V> pair : this.values) {
+            set.add(new SimpleEntry<>(pair.getKey(), pair.getValue()));
+        }
+    }
+
+
     public static void main(String[] args) {
-        System.out.println(ExtensibleHashBucket.getFrontBits(3, 2147483647));
+        //System.out.println(ExtensibleHashBucket.getFrontBits(3, 2147483647));
         //this.getFrontBits(2, 4);
     }
 
